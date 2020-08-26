@@ -5,7 +5,7 @@ void month_day(int year, int yearday, int *pmonth, int *pday);
 
 int main() {
 
-    // TESTING ===================
+    // TEST
 
     return 0;
 }
