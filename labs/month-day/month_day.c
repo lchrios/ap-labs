@@ -4,6 +4,7 @@
 
 /* month_day function's prototype*/
 
+<<<<<<< HEAD
 bool isBisiesto(int year) {
     if (year % 400 == 0) { return true; } 
     else if (year % 100 == 0) { return false; } 
@@ -51,5 +52,11 @@ int main(int argc, char *argv[]) {
     
     
     
+=======
+int main() {
+
+    // TESTING
+
+>>>>>>> master
     return 0;
 }
