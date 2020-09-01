@@ -28,6 +28,10 @@ void month_day(int year, int yearday, int *pmonth, int *pday) {
         else {
             *pday = 0;
             *pmonth += 1;
+            if (*pmonth > 11) {
+                year += 1;
+                *pmonth = 0;
+            }
         }
     }
 
