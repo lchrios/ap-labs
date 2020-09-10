@@ -11,15 +11,14 @@ bool isBisiesto(int year) {
     else { return false; }
 }
 
-void month_day(int year, int yearday, int *pmonth, int *pday) {
+void month_day(int *year, int *yearday, int *pmonth, int *pday) {
     
     const char *monthName[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
     int monthLen[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
 
-    monthLen[1] += isBisiesto(year) ? 1 : 0;
+    monthLen[1] += isBisiesto(*year) ? 1 : 0;
 
-
-    for (int i = 0; i < yearday; i++) {
+    for (int i = 0; i < *yearday; i++) {
         // Same month
         if ((*pday + 1) < monthLen[*pmonth]) {
             *pday += 1;
@@ -29,13 +28,13 @@ void month_day(int year, int yearday, int *pmonth, int *pday) {
             *pday = 0;
             *pmonth += 1;
             if (*pmonth > 11) {
-                year += 1;
+                *year += 1;
                 *pmonth = 0;
             }
         }
     }
 
-    printf("%s %2d, %4d\n", monthName[*pmonth], *pday, year);  
+    printf("%s %2d, %4d\n", monthName[*pmonth], *pday, *year);  
 
 }
 
@@ -50,7 +49,7 @@ int main(int argc, char *argv[]) {
     char *yd = argv[2];
     int year = atoi(y), yearday = atoi(yd);
 
-    month_day(year, yearday, &pmonth, &pday);
+    month_day(&year, &yearday, &pmonth, &pday);
 
     
     
