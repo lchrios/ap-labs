@@ -40,7 +40,7 @@ Pacman Packages Report
 - Upgraded packages  : 90
 - Current installed  : 120
 
-List of packages
+List of packages  
 ----------------
 - Package Name        : gcc
   - Install date      : 2019-02-02 13:29
