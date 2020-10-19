@@ -7,27 +7,55 @@
 package main
 
 import (
+	"flag"
 	"io"
 	"log"
 	"net"
 	"os"
+	"sync"
 )
+
+var wg sync.WaitGroup
 
 //!+
 func main() {
-	conn, err := net.Dial("tcp", "localhost:8000")
-	if err != nil {
+
+	// Validate parameters
+	if len(os.Args) < 5 {
+		log.Println("Error: Badly used parameters. :$")
+		log.Println("Correct usage: ./client -user <username> -server <address:port>")
+		log.Println("           or: go run client.go -user <username> -server <address:port>")
+
+		// finish process
+		os.Exit(1)
+	}
+
+	// user / server flag obtaining
+	user := flag.String("user", "stranger", "Username to login to server chat.")
+	server := flag.String("server", "localhost:42069", "Address to connect to server.")
+	flag.Parse()
+
+	// Connect through tcp to localhost:8000
+	conn, err := net.Dial("tcp", *server)
+	if err != nil { // Connection error handling
 		log.Fatal(err)
 	}
-	done := make(chan struct{})
-	go func() {
+
+	// Generating goroutines group
+	wg.Add(1)
+
+	go func() { // receive all incomming messages
 		io.Copy(os.Stdout, conn) // NOTE: ignoring errors
 		log.Println("done")
-		done <- struct{}{} // signal the main goroutine
+		wg.Done() // signal the one goroutine has finished
 	}()
+
+	io.WriteString(conn, *user) // prompt message
+
 	mustCopy(conn, os.Stdin)
 	conn.Close()
-	<-done // wait for background goroutine to finish
+
+	wg.Wait() // wait for background goroutine to finish
 }
 
 //!-
