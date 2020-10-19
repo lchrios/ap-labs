@@ -35,7 +35,7 @@ type user struct {
 
 var (
 	ircPrompt      = "irc-server > "
-	serverTimeZone = "America/Guadalajara"
+	serverTimeZone = "America/Mazatlan"
 	entering       = make(chan client) // entering channel
 	leaving        = make(chan client) // exiting channel
 	messages       = make(chan string) // auxiliar data channel
@@ -63,7 +63,11 @@ func broadcaster() {
 			// udpate client data
 			info.online = true
 			info.ch = cli
-			info.lastcon = time.Now().String()
+			info.lastcon = getTime()
+
+			if info.isAdmin {
+				messages <- "[admin] " + info.aka + "has joined to lead the Hive."
+			}
 
 		case cli := <-leaving:
 			logoff(cli)
@@ -77,13 +81,19 @@ func broadcaster() {
 //!+userHandling
 
 func createUser(aka, ip, lastcon string) *user {
+	curr := getUserByAka(aka)
+	if curr != nil { // if created return that user
+		return curr
+	}
 	return &user{aka: aka, ip: ip, lastcon: lastcon, isAdmin: false, isKicked: false, online: false}
 }
 
 func logoff(cli client) {
 	u := users[cli]
 	u.online = false
+	u.lastcon = getTime()
 	close(u.ch)
+	messages <- u.aka + "now leaving the hive..."
 }
 
 func sendAllUsers(ch client) {
@@ -94,7 +104,7 @@ func sendAllUsers(ch client) {
 	}
 }
 
-func getUserByUsername(aka string) *user {
+func getUserByAka(aka string) *user {
 	for _, user := range users {
 		if user.aka == aka {
 			return user
@@ -105,12 +115,18 @@ func getUserByUsername(aka string) *user {
 
 func getUserInfo(usr *user) string {
 	if usr != nil {
-		return ircPrompt + "Username: " + usr.aka + ", IP: " + usr.ip + " Connected since: " + usr.lastcon
+		var status string
+		if usr.online {
+			status = ", Status: ONLINE, " + "Connected since: " + usr.lastcon
+		} else {
+			status = ", Status: OFFLINE, " + "Last seen: " + usr.lastcon
+		}
+		return ircPrompt + "Aka: " + usr.aka + ", IP: " + usr.ip + status
 	}
 	return ircPrompt + "User not found"
 }
 
-func messageUser(rec *user, sen string, msg string) string {
+func sendMessage(rec *user, sen string, msg string) string {
 	if rec != nil {
 		rec.ch <- sen + " (whispers) > " + msg
 		return sen + " to " + rec.aka + " > " + msg
@@ -118,26 +134,18 @@ func messageUser(rec *user, sen string, msg string) string {
 	return ircPrompt + "user not found"
 }
 
-func kickUser(rec, sen *user) string {
-	if rec != nil {
-		if rec == sen {
-			return ircPrompt + "you cannot kick yourself"
+func kickUser(kicked, admin *user) string {
+	if kicked != nil {
+		if kicked == admin {
+			return ircPrompt + "why would you kick yourself? Just log off! duh."
 		}
-		rec.isKicked = true
-		rec.ch <- ircPrompt + "you've been kicked from the server"
-		leaving <- rec.ch
-		messages <- ircPrompt + rec.aka + " has been kicked by " + sen.aka
-		return ircPrompt + " behave or you might be next"
+		kicked.isKicked = true
+		kicked.ch <- ircPrompt + "*suddenly feels a kick in the back*"
+		leaving <- kicked.ch
+		messages <- ircPrompt + kicked.aka + " has been kicked by " + admin.aka
+		return ircPrompt + " Chuck Norris' kick like effectuated."
 	}
-	return ircPrompt + "the user was not found"
-}
-
-func assignAdmin(rec *user) *user {
-	anyAdmin := false
-	for _, user := range users {
-
-	}
-	return nil
+	return ircPrompt + "the user was not found so there were no kicks :C"
 }
 
 //!-userHandling
@@ -166,7 +174,7 @@ func randomSuggestion(aka string) string {
 
 func isAvailable(aka string) string {
 	for _, user := range users {
-		if user.aka == aka {
+		if user.aka == aka && user.online {
 			return isAvailable(randomSuggestion(aka))
 		}
 	}
@@ -186,9 +194,15 @@ func handleConn(conn net.Conn) {
 	users[ch] = user
 	user.isKicked = false
 
-	who := user.aka
+	var who string
+	if user.isAdmin {
+		who = "[admin] " + user.aka
+	} else {
+		who = user.aka
+	}
+
 	// Welcome message
-	ch <- ircPrompt + "Welcome to the Ismael's Really Cool (IRC) Chat Server, comrade " + who
+	ch <- ircPrompt + "Welcome to the Ismael's Really Cool (IRC) Chat Server!"
 
 	entering <- ch
 	// broadcast all clients the arrival
@@ -208,13 +222,13 @@ func handleConn(conn net.Conn) {
 			sendAllUsers(ch)
 		case "/msg":
 			if len(tok) < 3 {
-				ch <- ircPrompt + "Usage: /msg <usename> <message>"
+				ch <- ircPrompt + "Correct usage: /msg <usename> <message>"
 			} else {
-				rec := getUserByUsername(tok[1])
-				if rec != nil {
-					ch <- messageUser(rec, who, strings.Join(tok[2:], " "))
+				dest := getUserByAka(tok[1])
+				if dest != nil {
+					ch <- sendMessage(dest, who, strings.Join(tok[2:], " "))
 				} else {
-					ch <- ircPrompt + "Usage: /msg <usename> <message>"
+					ch <- ircPrompt + "User " + tok[1] + " was not found"
 				}
 			}
 		case "/time":
@@ -223,39 +237,25 @@ func handleConn(conn net.Conn) {
 			if len(tok) <= 1 {
 				ch <- ircPrompt + "Usage: /user <username>"
 			} else {
-				ch <- getUserInfo(getUserByUsername(tok[1]))
+				ch <- getUserInfo(getUserByAka(tok[1]))
 			}
 		case "/kick":
 			if user.isAdmin {
-				if len(tok) == 1 {
+				if len(tok) < 2 {
 					ch <- ircPrompt + "Usage: /kick <username>"
 				} else {
-					ch <- kickUser(getUserByUsername(tok[1]), user)
+					fmt.Println(kickUser(getUserByAka(tok[1]), user))
 				}
 			} else {
-				ch <- ircPrompt + " you're not allowed to kick users"
+				ch <- ircPrompt + " you're not allowed to kick users, brah"
 			}
 		default:
 			if !user.isKicked {
 				messages <- who + " > " + input.Text()
 			} else {
-				conn.Close()
+				leaving <- ch
 			}
 		}
-	}
-
-	// NOTE: ignoring potential errors from input.Err()
-	if user.isAdmin {
-		newAdmin := assignAdmin(user)
-		if newAdmin != nil {
-			newAdmin.isAdmin = true
-			messages <- ircPrompt + newAdmin.aka + " is now the server admin"
-		}
-	}
-
-	if !user.isKicked {
-		leaving <- ch
-		messages <- ircPrompt + who + " has left"
 	}
 
 	conn.Close()

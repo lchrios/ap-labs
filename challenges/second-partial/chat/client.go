@@ -33,6 +33,7 @@ func main() {
 	// user / server flag obtaining
 	user := flag.String("user", "stranger", "Username to login to server chat.")
 	server := flag.String("server", "localhost:42069", "Address to connect to server.")
+
 	flag.Parse()
 
 	// Connect through tcp to localhost:8000
