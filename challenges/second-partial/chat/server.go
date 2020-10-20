@@ -31,6 +31,7 @@ type user struct {
 	isKicked bool
 	online   bool
 	ch       client
+	conn     net.Conn
 }
 
 var (
@@ -50,28 +51,33 @@ func broadcaster() {
 		case msg := <-messages:
 			// obtaining user
 			tok := strings.Split(msg, " ")
-			for _, cli := range users {
-				if cli.online && cli.aka != tok[0] { // sending only to online users except for the author
-					cli.ch <- msg
+			fmt.Println(msg)
+			for _, usr := range users {
+				if usr.online && usr.aka != tok[0] { // sending only to online users except for the author
+					usr.ch <- msg
 				}
 			}
-			fmt.Println(msg)
 
 		case cli := <-entering:
 
-			info := users[cli]
+			usr := users[cli]
+			fmt.Println(usr.aka + " has connected.")
 			// udpate client data
-			info.online = true
-			info.ch = cli
-			info.lastcon = getTime()
-
-			if info.isAdmin {
-				messages <- "[admin] " + info.aka + "has joined to lead the Hive."
-			}
+			usr.online = true
+			usr.ch = cli
+			usr.lastcon = getTime()
 
 		case cli := <-leaving:
-			logoff(cli)
+			usr := users[cli]
+
+			usr.online = false
+			usr.lastcon = getTime()
+			usr.conn = nil
+			usr.ip = "-----"
+
 			close(cli)
+			usr.ch = nil
+
 		}
 	}
 }
@@ -80,27 +86,24 @@ func broadcaster() {
 
 //!+userHandling
 
-func createUser(aka, ip, lastcon string) *user {
+func login(connec net.Conn, cl client) *user {
+	aka := isAvailable(getuser(connec))
 	curr := getUserByAka(aka)
+
 	if curr != nil { // if created return that user
+		curr.ch = cl
+		curr.conn = connec
+		curr.online = true
+		curr.isKicked = false
 		return curr
 	}
-	return &user{aka: aka, ip: ip, lastcon: lastcon, isAdmin: false, isKicked: false, online: false}
-}
-
-func logoff(cli client) {
-	u := users[cli]
-	u.online = false
-	u.lastcon = getTime()
-	close(u.ch)
-	messages <- u.aka + "now leaving the hive..."
+	return &user{aka: aka, ip: connec.RemoteAddr().String(), lastcon: getTime(), isAdmin: false, isKicked: false, online: true, ch: cl, conn: connec}
 }
 
 func sendAllUsers(ch client) {
-	for _, user := range users {
-		if user.online {
-			ch <- ircPrompt + user.aka + " -  connected since " + user.lastcon
-		}
+	ch <- "Total registered users: " + strconv.Itoa(len(users))
+	for _, usr := range users {
+		ch <- getUserInfo(usr)
 	}
 }
 
@@ -111,6 +114,12 @@ func getUserByAka(aka string) *user {
 		}
 	}
 	return nil
+}
+
+func makeAdmin(usr *user) {
+	usr.ch <- ircPrompt + "eres admin\n[https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.ytimg.com%2Fvi%2Fe8Cd_VfKj2E%2Fhqdefault.jpg&f=1&nofb=1] "
+	usr.isAdmin = true
+	messages <- ircPrompt + usr.aka + " has been promoted to admin\n[https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.ytimg.com%2Fvi%2FavbfmfbAnjc%2Fhqdefault.jpg&f=1&nofb=1]"
 }
 
 func getUserInfo(usr *user) string {
@@ -135,14 +144,20 @@ func sendMessage(rec *user, sen string, msg string) string {
 }
 
 func kickUser(kicked, admin *user) string {
+
 	if kicked != nil {
+
 		if kicked == admin {
 			return ircPrompt + "why would you kick yourself? Just log off! duh."
 		}
+
 		kicked.isKicked = true
 		kicked.ch <- ircPrompt + "*suddenly feels a kick in the back*"
+
 		leaving <- kicked.ch
+
 		messages <- ircPrompt + kicked.aka + " has been kicked by " + admin.aka
+
 		return ircPrompt + " Chuck Norris' kick like effectuated."
 	}
 	return ircPrompt + "the user was not found so there were no kicks :C"
@@ -173,8 +188,8 @@ func randomSuggestion(aka string) string {
 }
 
 func isAvailable(aka string) string {
-	for _, user := range users {
-		if user.aka == aka && user.online {
+	for _, usr := range users {
+		if usr.aka == aka && usr.online {
 			return isAvailable(randomSuggestion(aka))
 		}
 	}
@@ -188,11 +203,12 @@ func handleConn(conn net.Conn) {
 	ch := make(chan string) // outgoing client messages
 	go clientWriter(conn, ch)
 
-	aka := isAvailable(getuser(conn))
-	user := createUser(aka, conn.RemoteAddr().String(), getTime())
-	user.ch = ch
+	user := login(conn, ch)
 	users[ch] = user
-	user.isKicked = false
+
+	if len(users) <= 1 { // first user becomes admin by default
+		makeAdmin(user)
+	}
 
 	var who string
 	if user.isAdmin {
@@ -204,18 +220,14 @@ func handleConn(conn net.Conn) {
 	// Welcome message
 	ch <- ircPrompt + "Welcome to the Ismael's Really Cool (IRC) Chat Server!"
 
-	entering <- ch
 	// broadcast all clients the arrival
 	messages <- ircPrompt + who + " has joined us in the Hive! Hello there, comrade!"
-
-	if len(users) <= 1 { // first user becomes admin by default
-		ch <- ircPrompt + "eres admin\n[https://external-content.duckduckgo.com/iu/?u=https%3A%2F%2Fi.ytimg.com%2Fvi%2Fe8Cd_VfKj2E%2Fhqdefault.jpg&f=1&nofb=1] "
-		user.isAdmin = true
-	}
+	ch <- "You're logged in as: " + who
 
 	// reading of all messages
 	input := bufio.NewScanner(conn)
-	for input.Scan() {
+	signed := true
+	for input.Scan() && signed {
 		tok := strings.Split(input.Text(), " ")
 		switch tok[0] {
 		case "/users":
@@ -244,18 +256,42 @@ func handleConn(conn net.Conn) {
 				if len(tok) < 2 {
 					ch <- ircPrompt + "Usage: /kick <username>"
 				} else {
-					fmt.Println(kickUser(getUserByAka(tok[1]), user))
+					ch <- kickUser(getUserByAka(tok[1]), user)
 				}
 			} else {
 				ch <- ircPrompt + " you're not allowed to kick users, brah"
 			}
+		case "/op":
+			if user.isAdmin {
+				if len(tok) < 2 {
+					ch <- ircPrompt + "Correct usage: /op <username>"
+				} else {
+					dst := getUserByAka(tok[1])
+					if dst != nil {
+						makeAdmin(dst)
+						dst.ch <- "You've benn promoted to [admin] by " + user.aka
+					} else {
+						ch <- "User was not found"
+					}
+
+				}
+			} else {
+				ch <- ircPrompt + " you're not even [admin], pana"
+			}
+		case "/exit":
+			break
 		default:
 			if !user.isKicked {
 				messages <- who + " > " + input.Text()
 			} else {
-				leaving <- ch
+				conn.Close()
 			}
 		}
+	}
+
+	if !user.isKicked {
+		leaving <- ch
+		messages <- who + "now leaving the hive..."
 	}
 
 	conn.Close()
