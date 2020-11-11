@@ -13,6 +13,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -21,47 +22,102 @@ import (
 )
 
 //!+sema
+
 // tokens is a counting semaphore used to
 // enforce a limit of 20 concurrent requests.
 var tokens = make(chan struct{}, 20)
 
-func crawl(url string) []string {
-	fmt.Println(url)
-	tokens <- struct{}{} // acquire a token
-	list, err := links.Extract(url)
-	<-tokens // release the token
+// Nodo is a struct which helps to maintain a register about url and its respective depth
+type Nodo struct {
+	url   string
+	depth int
+}
+
+func crawl(nodo Nodo, fileName string, depth int) []Nodo {
+
+	// open file
+	file, err := os.OpenFile(fileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 
 	if err != nil {
-		log.Print(err)
+		log.Println(err)
 	}
-	return list
+
+	// write url in file
+	if _, err := file.WriteString(nodo.url + "\n"); err != nil {
+		log.Println(err)
+	}
+
+	fmt.Println(nodo.url)
+	file.Close()
+
+	// check if is at bottom line
+	if nodo.depth < depth {
+		tokens <- struct{}{} // acquire a token
+
+		// obtains all links assosiated to the url
+		list, err := links.Extract(nodo.url)
+
+		// declare all new nodos to be crawled at the next depth level
+		temp := make([]nodo, len(list))
+		for i, url := range list {
+			temp[i] = nodo{url: url, depth: nodo.depth + 1}
+		}
+
+		<-tokens // release the token
+
+		if err != nil {
+			log.Print(err)
+		}
+
+		return temp
+	}
+
+	return []nodo{}
 }
 
 //!-sema
 
 //!+
 func main() {
-	worklist := make(chan []string)
-	var n int // number of pending sends to worklist
+
+	if len(os.Args) != 4 {
+		fmt.Println("Error: wrong parameter input.\nCorrect usage: ./web-crawler -depth=<depth> -results=<results file> <url>")
+		os.Exit(1)
+	}
+
+	worklist := make(chan []nodo) // where nodes will be sent to be crawled
+	var n int                     // pending sends to worklist
+
+	initURL := os.Args[3:]
+	dp := flag.Int("depth", 1, "Depth")
+	fl := flag.String("results", "results.txt", "Result file")
+	flag.Parse()
+
+	urls := make([]nodo, len(initURL))
+
+	for i, url := range initURL {
+		urls[i] = nodo{url: url, depth: 0}
+	}
 
 	// Start with the command-line arguments.
 	n++
-	go func() { worklist <- os.Args[1:] }()
+	go func() { worklist <- urls }()
 
 	// Crawl the web concurrently.
 	seen := make(map[string]bool)
 	for ; n > 0; n-- {
 		list := <-worklist
 		for _, link := range list {
-			if !seen[link] {
-				seen[link] = true
+			if !seen[link.url] {
+				seen[link.url] = true
 				n++
-				go func(link string) {
-					worklist <- crawl(link)
+				go func(link nodo) {
+					worklist <- crawl(link, *fl, *dp)
 				}(link)
 			}
 		}
 	}
+
 }
 
 //!-
