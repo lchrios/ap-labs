@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-
 	"gopl.io/ch5/links"
 )
 
