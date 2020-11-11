@@ -58,9 +58,9 @@ func crawl(nodo Nodo, fileName string, depth int) []Nodo {
 		list, err := links.Extract(nodo.url)
 
 		// declare all new nodos to be crawled at the next depth level
-		temp := make([]nodo, len(list))
+		temp := make([]Nodo, len(list))
 		for i, url := range list {
-			temp[i] = nodo{url: url, depth: nodo.depth + 1}
+			temp[i] = Nodo{url: url, depth: nodo.depth + 1}
 		}
 
 		<-tokens // release the token
@@ -72,7 +72,7 @@ func crawl(nodo Nodo, fileName string, depth int) []Nodo {
 		return temp
 	}
 
-	return []nodo{}
+	return []Nodo{}
 }
 
 //!-sema
@@ -80,12 +80,14 @@ func crawl(nodo Nodo, fileName string, depth int) []Nodo {
 //!+
 func main() {
 
+	fmt.Println(os.Args)
+
 	if len(os.Args) != 4 {
 		fmt.Println("Error: wrong parameter input.\nCorrect usage: ./web-crawler -depth=<depth> -results=<results file> <url>")
 		os.Exit(1)
 	}
 
-	worklist := make(chan []nodo) // where nodes will be sent to be crawled
+	worklist := make(chan []Nodo) // where nodes will be sent to be crawled
 	var n int                     // pending sends to worklist
 
 	initURL := os.Args[3:]
@@ -93,10 +95,10 @@ func main() {
 	fl := flag.String("results", "results.txt", "Result file")
 	flag.Parse()
 
-	urls := make([]nodo, len(initURL))
+	urls := make([]Nodo, len(initURL))
 
 	for i, url := range initURL {
-		urls[i] = nodo{url: url, depth: 0}
+		urls[i] = Nodo{url: url, depth: 0}
 	}
 
 	// Start with the command-line arguments.
@@ -111,7 +113,7 @@ func main() {
 			if !seen[link.url] {
 				seen[link.url] = true
 				n++
-				go func(link nodo) {
+				go func(link Nodo) {
 					worklist <- crawl(link, *fl, *dp)
 				}(link)
 			}
