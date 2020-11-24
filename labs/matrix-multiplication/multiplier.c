@@ -37,7 +37,7 @@ long * getColumn(int col, long *mat){
     long *res = malloc(THREADS_NUM * sizeof(long)); // Allocation for the resulting column
     
     // Saves every column to the 
-    for(int i = 0; i < THREADS_NUM; i++; col += THREADS_NUM){ res[i] = mat[col]; }
+    for(int i = 0; i < THREADS_NUM; i++){ res[i] = mat[col]; col += THREADS_NUM; }
     
     return res;
 }
@@ -77,10 +77,10 @@ long * readMatrix(char *fname){
     long *matrix = malloc(size * sizeof(long));
     int index = 0;
 
-    while(fscanf(f, "%ld", &matrix[index]) != EOF){ index++; }
+    while(fscanf(fp, "%ld", &matrix[index]) != EOF){ index++; }
     
-    fclose(f);
-    
+    fclose(fp);
+
     infof("Successfully read the matrix");
 
     return matrix;   
@@ -172,7 +172,7 @@ long * multiply(long *matA, long *matB){
 int saveResult(long *result) { 
 
     FILE *file;
-    file = fopen(RESULT_MATRIX_FILE, "w+");
+    file = fopen(resultMatrix, "w+");
     
     if(file==NULL){
         return -1;
